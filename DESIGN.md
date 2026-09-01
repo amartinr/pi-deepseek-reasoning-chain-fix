@@ -154,14 +154,15 @@ serialized `reasoning_content` by hand at the wire layer would duplicate pi's
 serializer logic and drift with pi releases. Stamping the native block
 (single field) lets pi's own, version-maintained serializer do the replay.
 
-**D4 — Strip `thinking: disabled` only on continuations.** Open WebUI sends
-the marker automatically on tool-call continuations, which is a silent
+**D4 — Strip `thinking: disabled` on tool-call continuations.** Open WebUI
+sends the marker automatically on tool-call continuations, which is a silent
 kill-switch. Pi sends it only when the user's thinking level is off. The
-strip applies only when the request is a tool-call continuation (assistant
-`tool_calls` in history), where a disabled marker is broken by definition;
-non-tool turns keep whatever thinking setting the user chose. *Known
-fragility:* the current implementation evaluates "was reasoning" after the
-forcing pass — see PLAN.md P0.
+strip applies whenever the history is a tool-call continuation (assistant
+`tool_calls` present), where a disabled marker is broken by definition for
+DeepSeek (0 reasoning deltas, verified live); non-tool turns keep whatever
+thinking setting the user chose. The continuation flag is evaluated from the
+history **before** any forcing (single pass), so placeholder-only histories
+(replay failed) still get the strip.
 
 **D5 — Fail-open everywhere.** Every hook is a pure function with early
 guards; if pi's payload shapes change, the extension does nothing rather than

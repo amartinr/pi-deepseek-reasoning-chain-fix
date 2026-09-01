@@ -31,9 +31,9 @@ A continuation with thinking disabled is broken by definition for DeepSeek
 (0 reasoning deltas, verified live) — the user's "disabled from the start"
 intent is only meaningful for non-tool turns.
 
-- [ ] Recompute the continuation flag from the history *before* any forcing
+- [x] Recompute the continuation flag from the history *before* any forcing
       (single pass, see P1).
-- [ ] Update the function docstring to state the semantics explicitly.
+- [x] Update the function docstring to state the semantics explicitly.
 
 ## P1 — single-pass wire normalization
 
@@ -44,12 +44,14 @@ intent is only meaningful for non-tool turns.
 3. `historyHasReasoning(messages)` — `.some(...)`
 
 **Proposal:** one pass computing: `inToolScope`, `hasAssistantToolCalls`
-(continuation), `historyHasReasoning` (pre-forcing), applying the forcing in
-the same iteration. This halves the constant factor on 1M-token histories.
+(continuation), applying the forcing in the same iteration. This halves the
+constant factor on 1M-token histories.
 
-- [ ] Merge into a single loop; keep the pure-function signature
+- [x] Merge into a single loop; keep the pure-function signature
       (`fixWirePayloadForDeepSeek(payload) -> payload | undefined`).
-- [ ] Preserve determinism (stable serialization, prefix cache untouched).
+- [x] Preserve determinism (stable serialization, prefix cache untouched).
+      Mutations are applied only after the scope decision, so out-of-scope
+      payloads are never touched (regression-tested).
 
 ## P1 — defensive content guards
 
@@ -57,8 +59,9 @@ the same iteration. This halves the constant factor on 1M-token histories.
 `msg.content ?? []` / `message.content ?? []`. If `content` were ever a
 string (provider/format edge), the loop iterates characters silently.
 
-- [ ] Guard both with `Array.isArray(...)` checks; non-array content → skip.
-- [ ] Same guard in the new single-pass wire loop for `tool_calls`.
+- [x] Guard both with `Array.isArray(...)` checks; non-array content → skip.
+- [x] Same guard in the new single-pass wire loop for `tool_calls`.
+      Regression-tested: string content never crashes nor mutates.
 
 ## P2 — scope detection for prefix-stripped gateways
 
@@ -83,13 +86,13 @@ gateway that strips the prefix (model id `deepseek-v4-flash`, provider
 
 `verify-extension.mjs` covers the happy paths; add:
 
-- [ ] Strip fires when history has real reasoning AND on any continuation
+- [x] Strip fires when history has real reasoning AND on any continuation
       (P0 semantics).
-- [ ] Strip does NOT fire on a plain non-tool chat (no tool scope).
-- [ ] Single-pass equivalence: output identical to the old 3-pass logic on
+- [x] Strip does NOT fire on a plain non-tool chat (no tool scope).
+- [x] Single-pass equivalence: output identical to the old 3-pass logic on
       the existing fixtures (regression guard).
-- [ ] String `content` robustness (P1).
-- [ ] Prefix-cache stability: running the fix twice on the same input
+- [x] String `content` robustness (P1).
+- [x] Prefix-cache stability: running the fix twice on the same input
       produces a byte-identical payload (determinism guard).
 
 ## P3 — observability

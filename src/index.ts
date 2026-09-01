@@ -76,6 +76,13 @@ export function isToolScope(payload: Record<string, any>): boolean {
   );
 }
 
+/** True when the history contains a prior assistant that produced a tool call. */
+export function historyHasToolCalls(messages: any[]): boolean {
+  return messages.some(
+    (m) => m?.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+  );
+}
+
 /** Does the history contain any real reasoning to chain? */
 export function historyHasReasoning(messages: any[]): boolean {
   return messages.some(
@@ -88,7 +95,8 @@ export function fixNativeMessagesForDeepSeek(messages: any[]): { messages: any[]
   let changed = false;
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
-    for (const block of msg.content ?? []) {
+    if (!Array.isArray(msg.content)) continue;
+    for (const block of msg.content) {
       if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
         if (block.thinkingSignature !== "reasoning_content") {
           block.thinkingSignature = "reasoning_content";
@@ -100,24 +108,52 @@ export function fixNativeMessagesForDeepSeek(messages: any[]): { messages: any[]
   return { messages, changed };
 }
 
-/** 2) wire fix: force non-empty reasoning_content + strip thinking:disabled. */
+/**
+ * 2) wire fix: force non-empty reasoning_content + strip thinking:disabled.
+ *
+ * Single pass over messages computes the tool-scope flag, the continuation
+ * flag (assistant with tool_calls in history) and the list of assistant
+ * messages needing the " " placeholder — mutations are applied only after
+ * the scope decision, so an out-of-scope payload is never touched.
+ *
+ * Strip semantics (P0): `thinking: {type:"disabled"}` is removed whenever
+ * the history is a tool-call continuation. A continuation with thinking
+ * disabled is broken by definition for DeepSeek (0 reasoning deltas, verified
+ * live) — the user's own "disabled from the start" choice only applies to
+ * non-tool turns. This is evaluated from the history BEFORE any forcing, so
+ * placeholder-only histories (replay failed) still get the strip.
+ */
 export function fixWirePayloadForDeepSeek(payload: Record<string, any>): Record<string, any> | undefined {
   const messages = payload?.messages;
-  if (!payload || !Array.isArray(messages) || !isToolScope(payload)) return undefined;
+  if (!payload || !Array.isArray(messages)) return undefined;
 
-  let changed = false;
-  for (const m of messages) {
-    if (m?.role !== "assistant") continue;
+  const hasToolsParam = payload.tools !== undefined; // [] still carries the tools parameter
+  let hasAssistantToolCalls = false;
+  const toForce: number[] = []; // assistant indices needing a non-empty placeholder
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (!m || m.role !== "assistant") continue;
+    const tcs = m.tool_calls;
+    if (Array.isArray(tcs) && tcs.length > 0) hasAssistantToolCalls = true;
     const rc = m.reasoning_content;
-    if (typeof rc !== "string" || rc.length === 0) {
-      m.reasoning_content = " ";
-      changed = true;
-    }
+    if (typeof rc !== "string" || rc.length === 0) toForce.push(i);
   }
 
-  const thinking = payload.thinking;
-  if (thinking && typeof thinking === "object" && thinking.type === "disabled") {
-    if (historyHasReasoning(messages)) {
+  // Tool scope: the request carries `tools` (even []) or the history has a
+  // prior assistant that produced a tool call (the DeepSeek contract is
+  // driven by history content, not by this request's `tools`).
+  if (!hasToolsParam && !hasAssistantToolCalls) return undefined;
+
+  let changed = false;
+  for (const i of toForce) {
+    messages[i].reasoning_content = " ";
+    changed = true;
+  }
+
+  if (hasAssistantToolCalls) {
+    const thinking = payload.thinking;
+    if (thinking && typeof thinking === "object" && thinking.type === "disabled") {
       delete payload.thinking;
       changed = true;
     }
@@ -130,7 +166,8 @@ export function fixWirePayloadForDeepSeek(payload: Record<string, any>): Record<
 export function fixFinalizedMessageForDeepSeek(message: any): { message: any } | undefined {
   if (message?.role !== "assistant") return undefined;
   let changed = false;
-  for (const block of message.content ?? []) {
+  if (!Array.isArray(message.content)) return undefined;
+  for (const block of message.content) {
     if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
       if (block.thinkingSignature !== "reasoning_content") {
         block.thinkingSignature = "reasoning_content";

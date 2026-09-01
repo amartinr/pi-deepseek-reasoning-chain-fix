@@ -18,6 +18,7 @@ const mod = await import("/work/dist/index.js");
 const {
   isDeepSeekModel,
   isToolScope,
+  historyHasToolCalls,
   historyHasReasoning,
   fixNativeMessagesForDeepSeek,
   fixWirePayloadForDeepSeek,
@@ -87,15 +88,29 @@ assert.equal(fixed.messages[1].reasoning_content, "I need today's date first.");
 assert.equal(fixed.messages[3].reasoning_content, " "); // missing -> " "
 console.log("ok: wire fix keeps real text, upgrades missing/empty to non-empty");
 
-// ---- 5) wire fix: out of tool scope -> untouched ---------------------------
+// ---- 5) wire fix: out of tool scope -> untouched AND unmutated -------------
 const plain = {
   model: "deepseek/deepseek-v4-flash",
   messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }],
 };
+const plainCopy = structuredClone(plain);
 assert.equal(fixWirePayloadForDeepSeek(plain), undefined);
-console.log("ok: no tool scope -> payload untouched");
+assert.deepEqual(plain, plainCopy); // no in-place mutation outside scope
+console.log("ok: no tool scope -> payload untouched and unmutated");
 
-// ---- 6) thinking:disabled stripped only when history reasons ---------------
+// ---- 5b) tools=[] with no tool history still counts as scope (contract) ---
+const emptyTools = {
+  model: "deepseek/deepseek-v4-flash",
+  tools: [],
+  messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }],
+};
+const fixedEmptyTools = fixWirePayloadForDeepSeek(emptyTools);
+assert.ok(fixedEmptyTools);
+assert.equal(fixedEmptyTools.messages[1].reasoning_content, " ");
+console.log("ok: tools=[] still triggers the contract forcing");
+
+// ---- 6) thinking:disabled stripped on continuations (P0 semantics) --------
+// 6a) continuation WITH real reasoning in history
 const disabledWithReasoning = {
   model: "deepseek/deepseek-v4-flash",
   thinking: { type: "disabled" },
@@ -109,7 +124,59 @@ const disabledWithReasoning = {
 const stripped = fixWirePayloadForDeepSeek(disabledWithReasoning);
 assert.ok(stripped);
 assert.equal("thinking" in stripped, false);
-console.log("ok: thinking:disabled stripped when history has reasoning");
+console.log("ok: thinking:disabled stripped on continuation with real reasoning");
+
+// 6b) continuation WITHOUT any real reasoning (replay failed, placeholder
+//     history) — the P0 fix: the strip must still fire.
+const disabledNoReasoning = {
+  model: "deepseek/deepseek-v4-flash",
+  thinking: { type: "disabled" },
+  messages: [
+    { role: "user", content: "weather?" },
+    { role: "assistant", content: "Checking.", tool_calls: [{ id: "c1", type: "function", function: { name: "get_date", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "c1", content: "ok" },
+  ],
+  tools: [],
+};
+const strippedNoReasoning = fixWirePayloadForDeepSeek(disabledNoReasoning);
+assert.ok(strippedNoReasoning);
+assert.equal("thinking" in strippedNoReasoning, false);
+assert.equal(strippedNoReasoning.messages[1].reasoning_content, " ");
+console.log("ok: thinking:disabled stripped on continuation even without real reasoning (P0)");
+
+// 6c) thinking:disabled NOT stripped on a non-tool chat
+const disabledPlainChat = {
+  model: "deepseek/deepseek-v4-flash",
+  thinking: { type: "disabled" },
+  messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }],
+};
+assert.equal(fixWirePayloadForDeepSeek(disabledPlainChat), undefined);
+assert.equal(disabledPlainChat.thinking.type, "disabled"); // untouched
+console.log("ok: thinking:disabled kept on non-tool chat (user choice)");
+
+// ---- 6d) determinism: running the fix twice yields a byte-identical payload
+const det = {
+  model: "deepseek/deepseek-v4-flash",
+  thinking: { type: "disabled" },
+  messages: [
+    { role: "user", content: "weather?" },
+    { role: "assistant", content: "Checking.", tool_calls: [{ id: "c1", type: "function", function: { name: "get_date", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "c1", content: "ok" },
+    { role: "assistant", content: "Answering." },
+  ],
+  tools: [],
+};
+const first = structuredClone(det);
+fixWirePayloadForDeepSeek(first);
+const second = structuredClone(first);
+fixWirePayloadForDeepSeek(second);
+assert.deepEqual(first, second); // idempotent serialization -> stable prefix cache
+console.log("ok: wire fix deterministic and idempotent (prefix cache stable)");
+
+// ---- 6e) historyHasToolCalls helper ----------------------------------------
+assert.equal(historyHasToolCalls(disabledNoReasoning.messages), true);
+assert.equal(historyHasToolCalls([{ role: "user", content: "hi" }]), false);
+console.log("ok: historyHasToolCalls detects continuation flag");
 
 // ---- 7) return path: finalized message gets replayable signature -----------
 const finalMsg = {
@@ -121,5 +188,17 @@ assert.ok(res);
 assert.equal(res.message.content[0].thinkingSignature, "reasoning_content");
 assert.equal(fixFinalizedMessageForDeepSeek({ role: "user", content: "x" }), undefined);
 console.log("ok: message_end fix stamps stored message, non-assistant untouched");
+
+// ---- 8) P1 robustness: string content never crashes ------------------------
+const stringContentMsgs = [
+  { role: "user", content: "hi" },
+  { role: "assistant", content: "hello" }, // string content (edge)
+  { role: "assistant", content: [{ type: "thinking", thinking: "real" }] },
+];
+const strRes = fixNativeMessagesForDeepSeek(stringContentMsgs);
+assert.equal(strRes.changed, true); // only the array-content block gets stamped
+assert.equal(stringContentMsgs[1].content, "hello"); // string untouched, no char iteration
+assert.equal(fixFinalizedMessageForDeepSeek({ role: "assistant", content: "plain string" }), undefined);
+console.log("ok: string content handled defensively (no crash, no mutation)");
 
 console.log("\nALL CHECKS PASSED");
