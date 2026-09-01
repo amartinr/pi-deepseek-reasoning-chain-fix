@@ -5,6 +5,7 @@ src/
 verify-extension.mjs
 verify-live.mjs
 tests/
+tools/
 tsconfig.json
 node_modules/
 npm-debug.log*
