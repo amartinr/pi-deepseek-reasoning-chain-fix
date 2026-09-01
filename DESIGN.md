@@ -1,7 +1,7 @@
 # Design Document — pi-deepseek-reasoning-chain-fix
 
-Version: 0.1.1 · Branch: `improvements` · Companion docs: `README.md` (user),
-`PLAN.md` (hardening backlog).
+Version: 0.2.1 · Branch: `master` · Companion docs: `README.md` (user),
+`PLAN.md` (plan and history).
 
 ## 1. Purpose
 

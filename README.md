@@ -18,8 +18,9 @@ cp src/index.ts ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix.ts
 
 Then run `/reload` in pi.
 
-Compatible with any DeepSeek model, direct or behind a gateway that keeps the
-`deepseek/` prefix (e.g. LiteLLM).
+Apply to the models you list in `config.json` — typical DeepSeek ids like
+`deepseek/deepseek-v4-flash` (direct or behind a gateway such as LiteLLM)
+work out of the box.
 
 ## Configuration
 
