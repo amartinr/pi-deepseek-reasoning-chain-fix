@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 
-const mod = await import("/work/extensions/dist/index.js");
+const mod = await import("/work/dist/index.js");
 
 const {
   isDeepSeekModel,

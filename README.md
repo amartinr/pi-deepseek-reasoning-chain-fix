@@ -1,41 +1,48 @@
-# DeepSeek Reasoning Chain
+# pi-deepseek-reasoning-chain-fix
 
-Pi Coding Agent extension that keeps DeepSeek reasoning working across
-tool-calling turns, plus a validation harness with live probes.
+Pi extension that keeps DeepSeek reasoning working across tool-calling turns.
 
-## What it does
-
-- Preserves the real reasoning text on tool-call continuations.
-- Guarantees DeepSeek's required `reasoning_content` field on every request
-  in tool scope.
-- Removes the `thinking: disabled` flag that stops reasoning mid-turn.
-
-DeepSeek requires `reasoning_content` on every assistant message once a
-history contains tool calls. Without this fix, reasoning degrades or stops
-entirely after the first tool call.
+DeepSeek requires `reasoning_content` on every assistant message once the
+history contains tool calls. This extension fixes outbound requests so the
+field is always present and the real reasoning text survives between turns.
+Without it, DeepSeek stops reasoning (blank chain) or errors after the first
+tool call.
 
 ## Install
 
 ```bash
-pi install pi-deepseek-reasoning-chain-fix@0.1.0   # or: pi install ./extensions
+pi install pi-deepseek-reasoning-chain-fix@0.1.0
+# or from this directory:
+pi install /work
+# or manual copy (single-file source):
+cp src/index.ts ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix.ts
 ```
 
 Then run `/reload` in pi.
 
-Works with any DeepSeek model, direct or behind a gateway (e.g. LiteLLM).
+Compatible with any DeepSeek model, direct or behind a gateway that keeps the
+`deepseek/` prefix (e.g. LiteLLM).
 
-## Repository
+## Configuration
 
-| Path | Purpose |
-|------|---------|
-| `extensions/` | The pi extension (npm package: `src/` in git, `dist/` on npm) |
-| `tests/`, `probes/`, `alg-sim/` | Validation harness (unit + live probes) |
+Optional: `PI_DEEPSEEK_REASONING_EXTRA` — comma-separated model prefixes to
+treat as DeepSeek.
 
-## Validation
+## Development
 
-- 59 offline unit tests (forcing, replay, cleanup).
-- Extension unit checks against the built artifact.
-- Live A/B against a LiteLLM gateway.
+```bash
+npm install          # dev dependencies
+npm run build        # src/ -> dist/
+npm run verify       # unit checks against the built artifact
+node verify-live.mjs # live A/B against a gateway
+npm pack --dry-run   # inspect the published tarball (dist only)
+```
+
+## Versioning
+
+Semver via `npm version patch|minor|major` (commit + `vX.Y.Z` tag).
+Bumps follow conventional commit types: `fix:` → patch, `feat:` → minor,
+breaking → major (pre-1.0: minor).
 
 ## License
 
