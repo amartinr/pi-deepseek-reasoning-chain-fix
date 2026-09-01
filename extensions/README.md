@@ -63,6 +63,33 @@ the `deepseek/` model prefix (LiteLLM), and baseUrls containing
   Consistent finding across runs: placeholder-only can drop continuation
   reasoning to **0 deltas**; real-text replay keeps the chain alive.
 
+## Versioning
+
+Semantic Versioning, with bumps derived from the conventional commit types
+(the repo already uses `feat:`/`fix:`/`docs:`/`test:`/`chore:`/`build:`):
+
+| Commit type | npm version | Example (from 0.1.0) |
+|-------------|-------------|----------------------|
+| `fix:` (bugfix, no API change) | `npm version patch` | 0.1.1 |
+| `feat:` (new feature) | `npm version minor` | 0.2.0 |
+| breaking change | `npm version major` | 1.0.0 (pre-1.0: use `minor` for breaking) |
+
+Each `npm version <type>` runs `preversion` (typecheck + verify against the
+built artifact), bumps `package.json` + `package-lock.json`, commits, and
+creates the `v<version>` git tag. `postversion` pushes tags when a remote
+exists. `npm publish` rebuilds `dist/` via `prepublishOnly`.
+
+Manual workflow:
+
+```bash
+npm version minor   # e.g. 0.1.0 -> 0.2.0, commit + tag v0.2.0
+npm publish         # rebuild + publish the dist-only tarball
+```
+
+No changelog automation is wired up yet; `git log --oneline` between tags is
+the source of release notes (standard-version / release-please can be added
+later if desired).
+
 ## Install
 
 As a pi package (built artifact, `dist/` only):

@@ -1,6 +1,6 @@
 {
   "name": "pi-deepseek-reasoning-chain",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi Coding Agent extension that fixes the DeepSeek reasoning-chaining contract on tool-calling turns: replays the real reasoning text on continuations, forces non-empty reasoning_content in tool scope, and strips the thinking:disabled kill-switch.",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,7 +20,9 @@
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "verify": "node verify-extension.mjs",
-    "test": "node verify-extension.mjs"
+    "test": "node verify-extension.mjs",
+    "preversion": "npm run typecheck && npm run verify",
+    "postversion": "git push --tags 2>/dev/null || true"
   },
   "keywords": [
     "pi",
