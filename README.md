@@ -17,7 +17,7 @@ entirely after the first tool call.
 ## Install
 
 ```bash
-pi install pi-deepseek-reasoning-chain@0.1.0   # or: pi install ./extensions
+pi install pi-deepseek-reasoning-chain-fix@0.1.0   # or: pi install ./extensions
 ```
 
 Then run `/reload` in pi.

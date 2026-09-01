@@ -1,4 +1,4 @@
-# pi-deepseek-reasoning-chain
+# pi-deepseek-reasoning-chain-fix
 
 Pi extension that keeps DeepSeek reasoning working across tool-calling turns.
 
@@ -11,7 +11,7 @@ tool call.
 ## Install
 
 ```bash
-pi install pi-deepseek-reasoning-chain@0.1.0
+pi install pi-deepseek-reasoning-chain-fix@0.1.0
 # or from this directory:
 pi install /work/extensions
 # or manual copy (single-file source):
