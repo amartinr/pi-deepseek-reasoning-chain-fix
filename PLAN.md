@@ -77,18 +77,20 @@ removed entirely. The scope is now explicit configuration:
 - `isDeepSeekModel`/`PI_DEEPSEEK_REASONING_EXTRA` removed; the matcher is
   `modelsMatch()` and the loader `loadConfig()` (both exported and tested).
 
-- [x] Widen the matcher without false positives on non-DeepSeek models.
-- [x] Unit tests for: bare `deepseek-v4-flash` id, custom provider,
-      false-positive guard (e.g. `deepseek-models-test` on a random provider
-      stays excluded unless matched by the extra env list).
+- [x] Scope is config-driven: no heuristic matcher remains; `modelsMatch()`
+      covers exact/prefix/case-insensitive and the empty-list inert case.
+- [x] Unit tests: exact, prefix, case-insensitive, bare id not configured,
+      empty list never matches, non-deepseek excluded; `loadConfig` covers
+      valid, malformed and missing files (all fail-open).
 
 ## P3 — test coverage for the hardened behavior
 
 `verify-extension.mjs` covers the happy paths; add:
 
-- [x] Strip fires when history has real reasoning AND on any continuation
-      (P0 semantics).
-- [x] Strip does NOT fire on a plain non-tool chat (no tool scope).
+- [x] `thinking: disabled` is PRESERVED in every case — real reasoning
+      (no-op), placeholder forcing (contract met, marker intact), plain
+      non-tool chat (untouched), and compliance mode (wire active,
+      thinking kept).
 - [x] Single-pass equivalence: output identical to the old 3-pass logic on
       the existing fixtures (regression guard).
 - [x] String `content` robustness (P1).
@@ -117,3 +119,16 @@ removed entirely. The scope is now explicit configuration:
       working reasoning (32/36 deltas).
 - [x] `npm version patch` → v0.1.2, published, changelog via commit history.
 - [x] Branch merged to `master` only after the live check passes.
+
+## Post-plan (shipped after the merge)
+
+- [x] **v0.2.0 — `replayReasoning` knob.** Config option to switch between
+      full chaining (real text replay) and compliance-only (`" "`
+      placeholder). Native layer on/off; wire layer always active.
+- [x] **v0.2.1 — strip reverted (false premise).** The `thinking:disabled`
+      strip was removed: pi sends the marker only when the user chose
+      thinking off (no Open WebUI-style injection), so stripping would
+      override user intent. `thinking` is now preserved in every path;
+      only the `reasoning_content` forcing remains. Live-verified:
+      user-disabled thinking + `" "` forcing satisfies the contract (no
+      400).
