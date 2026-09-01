@@ -1,8 +1,9 @@
 /**
- * Live A/B of the deepseek-reasoning-chain extension against
+ * Live A/B of the pi-deepseek-reasoning-chain package against
  * http://litellm.private (deepseek/deepseek-v4-flash).
  *
- * Simulates pi's full flow on a tool-call continuation:
+ * Loads the BUILT artifact (dist/index.js) and simulates pi's full flow on
+ * a tool-call continuation:
  *
  *   turn 1 (authentic) -> native stored message -> pi serializer -> wire
  *   payload -> [extension fixes] -> gateway
@@ -16,12 +17,10 @@
  * N repetitions per condition; median reasoning length reported.
  */
 
-import { createJiti } from "jiti";
 import { readFileSync } from "node:fs";
 
-const jiti = createJiti(import.meta.url, { interopDefault: true });
-const { fixNativeMessagesForDeepSeek, fixWirePayloadForDeepSeek } = await jiti.import(
-  "/work/extensions/deepseek-reasoning-chain.ts"
+const { fixNativeMessagesForDeepSeek, fixWirePayloadForDeepSeek } = await import(
+  "/work/extensions/dist/index.js"
 );
 
 const KEY = readFileSync("/tmp/.litellm_key", "utf8").trim();

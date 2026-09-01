@@ -1,8 +1,9 @@
 /**
- * Standalone verification of the deepseek-reasoning-chain extension.
+ * Standalone verification of the pi-deepseek-reasoning-chain package.
  *
- * 1. Loads the extension the way pi does (jiti) with a stub API.
- * 2. Exercises the pure fix functions against realistic payloads:
+ * Loads the BUILT artifact (dist/index.js) the way pi loads a packaged
+ * extension, then exercises the exported fix functions against realistic
+ * payloads:
  *    - pi serializer WITH thinkingSignature  -> real text already replayed
  *    - pi serializer WITHOUT signature      -> wire fix injects " "
  *    - LiteLLM gateway (model deepseek/deepseek-v4-flash, no pi deepseek
@@ -10,11 +11,9 @@
  *    - thinking:disabled kill-switch        -> stripped when history reasons
  */
 
-import { createJiti } from "jiti";
 import assert from "node:assert/strict";
 
-const jiti = createJiti(import.meta.url, { interopDefault: true });
-const mod = await jiti.import("/work/extensions/deepseek-reasoning-chain.ts");
+const mod = await import("/work/extensions/dist/index.js");
 
 const {
   isDeepSeekModel,

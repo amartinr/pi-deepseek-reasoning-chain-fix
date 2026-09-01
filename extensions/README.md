@@ -65,7 +65,34 @@ the `deepseek/` model prefix (LiteLLM), and baseUrls containing
 
 ## Install
 
-Copy to `~/.pi/agent/extensions/deepseek-reasoning-chain.ts` (global
-auto-discovery, hot-reloadable with `/reload`) or `.pi/extensions/` for a
-project. Optional: `PI_DEEPSEEK_REASONING_EXTRA` env var with extra
-comma-separated model prefixes to treat as DeepSeek.
+As a pi package (built artifact, `dist/` only):
+
+```bash
+pi install pi-deepseek-reasoning-chain@0.1.0   # once published
+```
+
+Or install from this directory:
+
+```bash
+pi install /work/extensions
+```
+
+Manual copy (single-file source, for development):
+
+```bash
+cp src/index.ts ~/.pi/agent/extensions/deepseek-reasoning-chain.ts
+```
+
+Then `/reload` in pi (or restart). Optional:
+`PI_DEEPSEEK_REASONING_EXTRA` env var adds comma-separated model prefixes to
+treat as DeepSeek.
+
+## Development
+
+```bash
+npm install        # dev deps: typescript, pi types
+npm run build      # tsc: src/ -> dist/
+npm run verify     # unit checks against the built artifact
+node verify-live.mjs   # live A/B against a LiteLLM gateway
+npm pack --dry-run # inspect the published tarball (dist only, no src)
+```

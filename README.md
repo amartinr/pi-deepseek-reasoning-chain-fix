@@ -68,6 +68,17 @@ hooks).
 
 ## The extension — how it works
 
+The extension is an npm package (`extensions/`). Packaging convention:
+
+- **GitHub**: the repo holds `extensions/src/index.ts` (TypeScript source).
+  `dist/` is gitignored and never pushed.
+- **npm**: the tarball ships only the built `dist/` (`files: ["dist"]` plus
+  `.npmignore` as an explicit backstop) — the `src/` content is never
+  included.
+- Build: `npm run build` (tsc) compiles `src/` → `dist/`; `prepublishOnly`
+  rebuilds before publish; `pi.extensions: ["./dist/index.js"]` declares the
+  pi extension entry point.
+
 Three hooks, one per layer of the fix:
 
 | Hook | Layer | Fix |

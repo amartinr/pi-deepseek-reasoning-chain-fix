@@ -1,0 +1,10 @@
+# The npm package ships only the built output (dist/), never the source.
+# package.json's "files": ["dist"] is the primary gate; this is the explicit
+# backstop so src/ (and dev tooling) can never leak into the tarball.
+src/
+verify-extension.mjs
+verify-live.mjs
+tests/
+tsconfig.json
+node_modules/
+npm-debug.log*
