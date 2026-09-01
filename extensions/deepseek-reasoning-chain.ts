@@ -142,6 +142,9 @@ export function fixFinalizedMessageForDeepSeek(message: any): { message: any } |
 }
 
 export default function (pi: ExtensionAPI) {
+  console.log(
+    "[deepseek-reasoning-chain] active: reasoning chaining fix for deepseek models"
+  );
   pi.on("context", async (event, ctx) => {
     const model = ctx.model as any;
     if (!model || !isDeepSeekModel(model.provider, model.id, model.baseUrl)) return;
