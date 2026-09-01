@@ -57,11 +57,60 @@ console.log("ok: config scope (exact, prefix, case-insensitive, empty -> inert, 
 // ---- 2b) loadConfig: file, malformed, missing ------------------------------
 const loaded = loadConfig(join(tmpCfg, "config.json"));
 assert.deepEqual(loaded.models, ["deepseek/deepseek-v4-flash"]);
+assert.equal(loaded.replayReasoning, true); // default when absent
 const malformed = mkdtempSync(join(tmpdir(), "dsrc-bad-"));
 writeFileSync(join(malformed, "config.json"), "{ not json");
 assert.deepEqual(loadConfig(join(malformed, "config.json")).models, []); // fail-open
 assert.deepEqual(loadConfig("/nonexistent/config.json").models, []); // missing -> inert
-console.log("ok: loadConfig (valid, malformed -> inert, missing -> inert)");
+// replayReasoning parsing
+const replayCfg = mkdtempSync(join(tmpdir(), "dsrc-rp-"));
+writeFileSync(join(replayCfg, "off.json"), JSON.stringify({ models: ["deepseek/"], replayReasoning: false }));
+writeFileSync(join(replayCfg, "on.json"), JSON.stringify({ models: ["deepseek/"], replayReasoning: true }));
+writeFileSync(join(replayCfg, "bad.json"), JSON.stringify({ models: ["deepseek/"], replayReasoning: "yes" }));
+assert.equal(loadConfig(join(replayCfg, "off.json")).replayReasoning, false);
+assert.equal(loadConfig(join(replayCfg, "on.json")).replayReasoning, true);
+assert.equal(loadConfig(join(replayCfg, "bad.json")).replayReasoning, true); // non-boolean -> default
+console.log("ok: loadConfig (valid, malformed -> inert, missing -> inert, replayReasoning parsing)");
+
+// ---- 2c) replayReasoning knob: handler behavior in both modes ---------------
+function captureHandlers(configPath) {
+  process.env.PI_DEEPSEEK_REASONING_CONFIG = configPath;
+  const handlers = {};
+  factory({ on: (name, fn) => (handlers[name] = fn) });
+  return handlers;
+}
+const dsCtx = { model: { id: "deepseek/deepseek-v4-flash" } };
+const thinkingMsg = {
+  messages: [{ role: "assistant", content: [{ type: "thinking", thinking: "real chain" }] }],
+};
+const finalMsgKnob = { message: { role: "assistant", content: [{ type: "thinking", thinking: "real chain" }] } };
+const wireIn = {
+  payload: {
+    model: "deepseek/deepseek-v4-flash",
+    thinking: { type: "disabled" },
+    messages: [
+      { role: "assistant", content: "a", tool_calls: [{ id: "c1", type: "function", function: { name: "get_date", arguments: "{}" } }] },
+    ],
+    tools: [],
+  },
+};
+
+// chaining mode: native layer stamps, wire layer works
+const chainH = captureHandlers(join(replayCfg, "on.json"));
+const ctxOut = await chainH.context(thinkingMsg, dsCtx);
+assert.equal(ctxOut.messages[0].content[0].thinkingSignature, "reasoning_content");
+assert.ok(chainH.message_end(finalMsgKnob, dsCtx));
+assert.ok(chainH.before_provider_request({ payload: structuredClone(wireIn.payload) }, dsCtx));
+
+// compliance mode: native layer inert, wire layer still active
+const compH = captureHandlers(join(replayCfg, "off.json"));
+assert.equal(await compH.context(thinkingMsg, dsCtx), undefined); // no stamping
+assert.equal(await compH.message_end(finalMsgKnob, dsCtx), undefined); // no stored signature
+const compWire = compH.before_provider_request({ payload: structuredClone(wireIn.payload) }, dsCtx);
+assert.ok(compWire);
+assert.equal(compWire.messages[0].reasoning_content, " "); // " " still forced (contract)
+assert.equal("thinking" in compWire, false); // strip still active
+console.log("ok: replayReasoning knob (chaining vs compliance-only, wire always active)");
 
 // ---- 3) context fix: stamps signature so the serializer replays REAL text ---
 const nativeMsgs = [

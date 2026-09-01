@@ -31,14 +31,22 @@ The extension applies only to the model ids listed in
   "models": [
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro"
-  ]
+  ],
+  "replayReasoning": true
 }
 ```
 
-An id matches exactly or as a prefix (case-insensitive), so `"deepseek/"`
-covers every deepseek-routed model. An empty or missing list leaves the
-extension **inert** — the safe default; the load log reports the active ids.
-Override the config path with `PI_DEEPSEEK_REASONING_CONFIG`.
+- `models` — model ids the fix applies to; exact or prefix match
+  (case-insensitive), so `"deepseek/"` covers every deepseek-routed model.
+  An empty or missing list leaves the extension **inert** — the safe
+  default.
+- `replayReasoning` — `true` (default): the real reasoning text is replayed
+  on continuations (chaining). `false`: compliance only — a `" "`
+  placeholder is sent to satisfy DeepSeek's contract, without chaining the
+  real text.
+
+Override the config path with `PI_DEEPSEEK_REASONING_CONFIG`. The load log
+reports the active ids and the mode.
 
 ## Development
 

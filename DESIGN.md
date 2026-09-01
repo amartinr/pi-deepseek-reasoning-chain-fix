@@ -168,6 +168,15 @@ history **before** any forcing (single pass), so placeholder-only histories
 guards; if pi's payload shapes change, the extension does nothing rather than
 crash a turn.
 
+**D6 — Configurable chaining vs compliance (`replayReasoning`).** The mode
+switch mirrors the agent_loop_guard pipe's `REPLAY_REASONING_TEXT` valve:
+`true` (default) enables the native layer (real-text replay + stored
+signatures); `false` disables the native layer entirely (no context
+stamping, no message_end stamping) so the stored history never replays real
+text — only the wire layer runs, sending `" "` to satisfy the contract. The
+wire layer is active in both modes: compliance is never optional, chaining
+is.
+
 ## 7. Scope detection
 
 The scope is **explicit, not heuristic**: the model ids the fix applies to
@@ -176,9 +185,14 @@ construction.
 
 - Location: `~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix/config.json`
   (overridable via `PI_DEEPSEEK_REASONING_CONFIG`).
-- Format: `{ "models": ["deepseek/deepseek-v4-flash", "deepseek/"] }`.
+- Format: `{ "models": ["deepseek/deepseek-v4-flash", "deepseek/"],
+  "replayReasoning": true }`.
 - Matching: the model id equals a listed id or starts with one
   (case-insensitive) — `modelsMatch()`.
+- `replayReasoning` — mode switch: `true` (default) replays the real
+  reasoning text (chaining); `false` sends only the `" "` placeholder
+  (compliance, no chaining). Only literal booleans are honored; anything
+  else falls back to the default. See decision D6.
 - **Empty or missing list → the extension is inert** (safe default; the load
   log states the active ids or the inert state).
 - Fail-open: a malformed file yields an empty list; the extension never

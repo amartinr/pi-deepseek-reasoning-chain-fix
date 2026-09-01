@@ -72,6 +72,9 @@ import os from "node:os";
 
 export interface ExtensionConfig {
   models: string[];
+  /** true = real reasoning text replayed on continuations (chaining);
+   *  false = compliance only, " " placeholder sent (no chaining). Default true. */
+  replayReasoning: boolean;
 }
 
 const DEFAULT_CONFIG_PATH = join(
@@ -94,9 +97,10 @@ export function loadConfig(
           .filter((m: unknown): m is string => typeof m === "string" && m.trim().length > 0)
           .map((m: string) => m.trim().toLowerCase())
       : [];
-    return { models };
+    const replayReasoning = typeof parsed?.replayReasoning !== "boolean" ? true : parsed.replayReasoning;
+    return { models, replayReasoning };
   } catch {
-    return { models: [] }; // missing/malformed file -> inert
+    return { models: [], replayReasoning: true }; // missing/malformed file -> inert
   }
 }
 
@@ -226,22 +230,29 @@ export default function (pi: ExtensionAPI) {
     );
   } else {
     console.log(
-      `[deepseek-reasoning-chain] active for ${config.models.length} model id(s): ${config.models.join(", ")}`
+      `[deepseek-reasoning-chain] active for ${config.models.length} model id(s): ${config.models.join(", ")}` +
+        (config.replayReasoning ? " (reasoning replay on)" : " (compliance only: ' ' placeholder)")
     );
   }
 
   pi.on("context", async (event, ctx) => {
+    // Native layer = chaining. In compliance-only mode the real reasoning
+    // text is intentionally NOT replayed (and not stamped on storage), so
+    // only the wire contract is satisfied.
+    if (!config.replayReasoning) return;
     if (!applies(ctx.model)) return;
     const { messages, changed } = fixNativeMessagesForDeepSeek(event.messages);
     return changed ? { messages } : undefined;
   });
 
   pi.on("before_provider_request", (event, ctx) => {
+    // Wire layer = contract compliance; active in both modes.
     if (!applies(ctx.model)) return;
     return fixWirePayloadForDeepSeek(event.payload as Record<string, any>);
   });
 
   pi.on("message_end", async (event, ctx) => {
+    if (!config.replayReasoning) return; // compliance mode: keep stored history replay-free
     if (!applies(ctx.model)) return;
     return fixFinalizedMessageForDeepSeek(event.message);
   });
