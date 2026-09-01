@@ -188,41 +188,45 @@ for (const [name, samples] of Object.entries(results)) {
 }
 
 // ---------------------------------------------------------------------------
-// Strip semantics (P0): continuation with thinking:disabled and a history
-// WITHOUT real reasoning (replay failed -> placeholder). WITHOUT the fix the
-// kill-switch stays on; WITH the fix (config + wire) it is stripped and the
-// model reasons again.
+// thinking:disabled is PRESERVED (user intent). Live check: a continuation
+// where the user disabled thinking must still satisfy the contract — the
+// wire fix forces " " on the assistants, thinking stays disabled, and the
+// gateway accepts the request (no 400) without reasoning (user's choice).
 // ---------------------------------------------------------------------------
-console.log("\n=== thinking:disabled on continuation (P0 strip semantics) ===");
+console.log("\n=== thinking:disabled preserved + contract satisfied (no 400) ===");
 const stripBase = {
   model: MODEL,
   thinking: { type: "disabled" },
   messages: [
     { role: "user", content: "What's the weather like in London today?" },
-    ...toolMsgs.map((m, i) => ({
+    {
       role: "assistant",
-      content: `Checking ${i}.`,
-      tool_calls: [{ id: m.tool_call_id, type: "function", function: { name: "get_date", arguments: "{}" } }],
-      // no reasoning_content at all: replay failed -> placeholder history
-    })),
+      content: "Checking.",
+      tool_calls: toolMsgs.map((m, i) => ({
+        id: m.tool_call_id,
+        type: "function",
+        function: { name: i === 0 ? "get_date" : "get_weather", arguments: "{}" },
+      })),
+    },
     ...toolMsgs,
     { role: "assistant", content: "Let me answer." },
   ],
   tools: TOOLS,
 };
 for (const [label, apply] of [
-  ["without fix (disabled kept)", false],
-  ["with fix (disabled stripped)", true],
+  ["without fix (no reasoning_content)", false],
+  ["with fix (' ' forced, thinking kept)", true],
 ]) {
   const samples = [];
   for (let i = 0; i < 2; i++) {
     const payload = JSON.parse(JSON.stringify(stripBase));
     if (apply) {
       const fixed = fixWirePayloadForDeepSeek(payload);
-      if (!fixed) throw new Error("expected strip fix to touch payload");
+      if (!fixed) throw new Error("expected wire fix to touch payload");
+      if (payload.thinking.type !== "disabled") throw new Error("thinking must be preserved");
     }
     const res = await completeStream(payload.messages, payload.tools);
-    samples.push(res.error ? `ERROR ${res.error}: ${res.body}` : `${res.reasoning_deltas} deltas / ${res.reasoning.length} chars`);
+    samples.push(res.error ? `ERROR ${res.error}: ${res.body.slice(0, 120)}` : `${res.reasoning_deltas} reasoning deltas / ${res.reasoning.length} chars / finish=${res.finish}`);
   }
   console.log(`${label}: ${samples.join(" | ")}`);
 }

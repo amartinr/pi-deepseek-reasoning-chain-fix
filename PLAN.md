@@ -15,25 +15,23 @@ efficiency, choke points, timeouts, resource consumption).
   histories (contextWindow up to 1M tokens).
 - The changes below are hardening + one semantic fix, not a rewrite.
 
-## P0 — fix the `thinking:disabled` strip semantics
+## P0 — ~~thinking:disabled strip~~ — REVERTED (false premise)
 
-**Current behavior (subtle interaction):** `fixWirePayloadForDeepSeek` forces
-`reasoning_content` on all assistants *before* evaluating
-`historyHasReasoning`. When the real-text replay failed and everything was
-placeholder-forced (`" "`), the history no longer contains detectable
-reasoning → the strip never fires → the kill-switch stays on exactly in the
-degraded scenario the extension exists to prevent.
+**Original claim:** strip `thinking: {type:"disabled"}` on tool-call
+continuations, matching the agent_loop_guard pipe (Open WebUI injects the
+marker on continuations).
 
-**Proposal:** strip `thinking: {type:"disabled"}` whenever the request is a
-tool-call continuation (assistant with `tool_calls` in history, i.e. the
-DeepSeek contract applies), matching the validated agent_loop_guard pipe.
-A continuation with thinking disabled is broken by definition for DeepSeek
-(0 reasoning deltas, verified live) — the user's "disabled from the start"
-intent is only meaningful for non-tool turns.
+**Reversal (v0.2.1):** the premise does not hold for pi. pi sends
+`thinking: disabled` only when the **user** chose thinking off; there is no
+Open WebUI-style auto-injection to counteract. Stripping the marker would
+override explicit user intent — the user must be able to choose a
+non-reasoning model. The strip was removed entirely; the wire layer keeps
+only the `reasoning_content` forcing (the contract, not a choice).
 
-- [x] Recompute the continuation flag from the history *before* any forcing
-      (single pass, see P1).
-- [x] Update the function docstring to state the semantics explicitly.
+- [x] Strip removed from `fixWirePayloadForDeepSeek` (thinking preserved).
+- [x] Tests updated: `thinking` preserved in both modes; live check:
+      user-disabled thinking + `" "` forcing satisfies the contract (no
+      400) without reasoning.
 
 ## P1 — single-pass wire normalization
 

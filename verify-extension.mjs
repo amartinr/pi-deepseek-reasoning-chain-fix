@@ -109,7 +109,7 @@ assert.equal(await compH.message_end(finalMsgKnob, dsCtx), undefined); // no sto
 const compWire = compH.before_provider_request({ payload: structuredClone(wireIn.payload) }, dsCtx);
 assert.ok(compWire);
 assert.equal(compWire.messages[0].reasoning_content, " "); // " " still forced (contract)
-assert.equal("thinking" in compWire, false); // strip still active
+assert.equal(compWire.thinking.type, "disabled"); // thinking preserved (user intent)
 console.log("ok: replayReasoning knob (chaining vs compliance-only, wire always active)");
 
 // ---- 3) context fix: stamps signature so the serializer replays REAL text ---
@@ -175,8 +175,9 @@ assert.ok(fixedEmptyTools);
 assert.equal(fixedEmptyTools.messages[1].reasoning_content, " ");
 console.log("ok: tools=[] still triggers the contract forcing");
 
-// ---- 6) thinking:disabled stripped on continuations (P0 semantics) --------
-// 6a) continuation WITH real reasoning in history
+// ---- 6) thinking:disabled is PRESERVED (user intent, never stripped) --------
+// 6a) continuation with real reasoning in history: nothing to force, and
+//     thinking stays as the user set it -> payload untouched (undefined).
 const disabledWithReasoning = {
   model: "deepseek/deepseek-v4-flash",
   thinking: { type: "disabled" },
@@ -187,13 +188,13 @@ const disabledWithReasoning = {
   ],
   tools: [],
 };
-const stripped = fixWirePayloadForDeepSeek(disabledWithReasoning);
-assert.ok(stripped);
-assert.equal("thinking" in stripped, false);
-console.log("ok: thinking:disabled stripped on continuation with real reasoning");
+const keptCopy = structuredClone(disabledWithReasoning);
+assert.equal(fixWirePayloadForDeepSeek(disabledWithReasoning), undefined); // nothing to change
+assert.deepEqual(disabledWithReasoning, keptCopy); // thinking and reasoning untouched
+console.log("ok: thinking:disabled preserved on continuation with real reasoning (no-op)");
 
-// 6b) continuation WITHOUT any real reasoning (replay failed, placeholder
-//     history) — the P0 fix: the strip must still fire.
+// 6b) continuation WITHOUT real reasoning (placeholder history): forcing
+//     applies, thinking still preserved.
 const disabledNoReasoning = {
   model: "deepseek/deepseek-v4-flash",
   thinking: { type: "disabled" },
@@ -204,13 +205,13 @@ const disabledNoReasoning = {
   ],
   tools: [],
 };
-const strippedNoReasoning = fixWirePayloadForDeepSeek(disabledNoReasoning);
-assert.ok(strippedNoReasoning);
-assert.equal("thinking" in strippedNoReasoning, false);
-assert.equal(strippedNoReasoning.messages[1].reasoning_content, " ");
-console.log("ok: thinking:disabled stripped on continuation even without real reasoning (P0)");
+const keptNoReasoning = fixWirePayloadForDeepSeek(disabledNoReasoning);
+assert.ok(keptNoReasoning);
+assert.equal(keptNoReasoning.thinking.type, "disabled");
+assert.equal(keptNoReasoning.messages[1].reasoning_content, " "); // contract still satisfied
+console.log("ok: thinking:disabled preserved on continuation without real reasoning (user intent)");
 
-// 6c) thinking:disabled NOT stripped on a non-tool chat
+// 6c) thinking:disabled on a plain non-tool chat: untouched, no scope
 const disabledPlainChat = {
   model: "deepseek/deepseek-v4-flash",
   thinking: { type: "disabled" },

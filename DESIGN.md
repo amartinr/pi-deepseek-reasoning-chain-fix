@@ -28,7 +28,7 @@ Consequences (each verified live against a real gateway):
 |--------------|---------|
 | Field missing on an assistant message | 400 on the raw API; through LiteLLM a single-space placeholder is injected with a server warning (`transformation.py`) |
 | Field present but empty (`""`) | Treated as absent — blank chain, silently degraded multi-turn reasoning |
-| `thinking: {"type":"disabled"}` on a continuation | Hard kill-switch: **0 reasoning deltas** on that turn |
+| `thinking: {"type":"disabled"}` (user's choice in pi) | Reasoning off by design — pi sends the marker only when the user disabled thinking; the extension must never override it |
 
 Two more contract facts drive the design:
 
@@ -53,8 +53,9 @@ installed bundle. Three relevant behaviors:
    `litellm.private` (provider `litellm`, `api: openai-completions`, model
    `deepseek/deepseek-v4-flash`) that detection **never fires** — nothing is
    forced, the field is missing, and the gateway injects a blank placeholder.
-3. **`thinking: disabled` is sent when reasoning is off** and kills
-   reasoning on tool-call continuations.
+3. **`thinking: disabled` is sent only when the user disabled thinking** —
+   it is a user choice in pi, not an injected artifact, and must be
+   respected.
 
 Gaps this extension closes:
 
@@ -62,7 +63,6 @@ Gaps this extension closes:
   missing (resumed sessions, migrated histories).
 - **G2** — No `reasoning_content` at all behind gateways that pi does not
   recognize as DeepSeek (LiteLLM-style routing).
-- **G3** — `thinking: disabled` kill-switch on tool-call continuations.
 
 ## 4. Design goals and non-goals
 
@@ -93,7 +93,8 @@ pi session (deepseek model in tool scope)
   │
   ├─ before_provider_request (wire payload, last hop before the endpoint)
   │    └─ in tool scope: force non-empty reasoning_content (" ") on every
-  │       assistant; strip thinking:disabled on continuations (G2, G3)
+  │       assistant (G2). `thinking` is left alone — it reflects the user's
+  │       own setting and is never stripped.
   │
   ├─ endpoint (DeepSeek direct / LiteLLM gateway)
   │
@@ -111,7 +112,7 @@ of every assistant message. This is the pi-native equivalent of the
 built-in serializer replay the real chain-of-thought text instead of dropping
 it. Idempotent: re-running over an already-stamped history changes nothing.
 
-### 5.2 `before_provider_request` — wire layer (G2, G3)
+### 5.2 `before_provider_request` — wire layer (G2)
 
 `fixWirePayloadForDeepSeek(payload)`:
 
@@ -122,8 +123,12 @@ it. Idempotent: re-running over an already-stamped history changes nothing.
    the gateway would inject anyway, made explicit and non-empty) on every
    assistant message that lacks it or carries it empty. Real text, when the
    serializer already replayed it, is never touched.
-3. Strips `thinking: {"type": "disabled"}` on tool-call continuations (see
-   §6, decision D4).
+
+`thinking` is deliberately never touched: pi sends `thinking: disabled`
+only when the user chose thinking off, and stripping it would override that
+choice (the Open WebUI pipe stripped it because Open WebUI injects the
+marker on continuations regardless of user intent — that premise does not
+hold in pi).
 
 Returns the payload only when something changed (`undefined` otherwise), per
 the hook contract: "returning `undefined` keeps the payload unchanged".
@@ -154,15 +159,12 @@ serialized `reasoning_content` by hand at the wire layer would duplicate pi's
 serializer logic and drift with pi releases. Stamping the native block
 (single field) lets pi's own, version-maintained serializer do the replay.
 
-**D4 — Strip `thinking: disabled` on tool-call continuations.** Open WebUI
-sends the marker automatically on tool-call continuations, which is a silent
-kill-switch. Pi sends it only when the user's thinking level is off. The
-strip applies whenever the history is a tool-call continuation (assistant
-`tool_calls` present), where a disabled marker is broken by definition for
-DeepSeek (0 reasoning deltas, verified live); non-tool turns keep whatever
-thinking setting the user chose. The continuation flag is evaluated from the
-history **before** any forcing (single pass), so placeholder-only histories
-(replay failed) still get the strip.
+**D4 — Never touch `thinking`.** pi sends `thinking: disabled` only when
+the user chose thinking off, so any strip would override explicit user
+intent. The Open WebUI pipe stripped the marker because Open WebUI injects
+it on tool-call continuations regardless of user intent; that premise is
+false for pi and was removed (the earlier strip in this extension was a
+mistake, reverted in v0.2.1).
 
 **D5 — Fail-open everywhere.** Every hook is a pure function with early
 guards; if pi's payload shapes change, the extension does nothing rather than
@@ -206,10 +208,10 @@ PLAN.md P2.
 
 ### Offline
 
-- 7 unit checks (`verify-extension.mjs`) against the **built artifact**
-  (`dist/index.js`): hook registration, scope detection, signature stamping
+- 17 unit checks (`verify-extension.mjs`) against the **built artifact**
+  (`dist/index.js`): config scope + mode knob, signature stamping
   (idempotent), wire forcing (real text preserved, missing → `" "`),
-  no-touch outside tool scope, thinking-strip, message_end stamping.
+  no-touch outside tool scope, `thinking` preserved, message_end stamping.
 
 ### Live (against `deepseek/deepseek-v4-flash` via LiteLLM)
 
@@ -224,7 +226,8 @@ Consistent findings: placeholder-only can drop continuation reasoning to
 **0 deltas**; real-text replay never produced 0 and at its best showed 4×
 more reasoning with visible chain continuity (`"Hemos recibido el resultado
 de la herramienta... Basándome en el resultado..."`). `thinking: disabled`
-always yielded **0 deltas** vs 17–38 without, across runs.
+(kept, never stripped) yields **0 deltas** — the user's choice, verified to
+work without breaking the contract.
 
 ### Production observation
 
@@ -240,11 +243,11 @@ hardening, not redesign; tracked in `PLAN.md`:
 
 | Priority | Item |
 |----------|------|
-| P0 | `thinking:disabled` strip semantics (evaluate continuation flag before forcing) |
+| P0 | ~~`thinking:disabled` strip~~ — reverted (false premise for pi: Open WebUI's auto-injection does not apply; the strip would override user intent). Single-pass kept |
 | P1 | Single-pass wire normalization (three O(n) scans → one) |
 | P1 | `Array.isArray` guards on `content` iteration |
-| P2 | Scope detection for prefix-stripped gateways |
-| P3 | Unit tests (strip semantics, robustness, determinism) + observability |
+| P2 | Config-driven scope (model ids) instead of heuristics |
+| P3 | Unit tests (thinking preservation, robustness, determinism) + observability |
 
 ## 10. Security
 

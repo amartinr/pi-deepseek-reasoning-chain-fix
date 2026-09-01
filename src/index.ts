@@ -37,8 +37,9 @@
  *    covers blocks whose signature was lost, e.g. resumed sessions).
  * 2. `before_provider_request` — wire payload layer, the last hook before
  *    the request reaches the endpoint: in tool scope, force a non-empty
- *    `reasoning_content` (" ") on every assistant message and strip
- *    `thinking: disabled` when the conversation has been reasoning.
+ *    `reasoning_content` (" ") on every assistant message. `thinking` is
+ *    deliberately left alone — pi sends `thinking: disabled` only when the
+ *    user chose thinking off, and stripping it would override that choice.
  * 3. `message_end` — return path: normalize the finalized assistant message
  *    so the STORED reasoning stays replayable by the next continuation
  *    (ensures `thinkingSignature` survives whatever the session persistence
@@ -151,19 +152,18 @@ export function fixNativeMessagesForDeepSeek(messages: any[]): { messages: any[]
 }
 
 /**
- * 2) wire fix: force non-empty reasoning_content + strip thinking:disabled.
+ * 2) wire fix: force non-empty reasoning_content (DeepSeek contract).
  *
- * Single pass over messages computes the tool-scope flag, the continuation
- * flag (assistant with tool_calls in history) and the list of assistant
- * messages needing the " " placeholder — mutations are applied only after
- * the scope decision, so an out-of-scope payload is never touched.
+ * Single pass over messages computes the tool-scope flag and the list of
+ * assistant messages needing the " " placeholder — mutations are applied
+ * only after the scope decision, so an out-of-scope payload is never
+ * touched.
  *
- * Strip semantics (P0): `thinking: {type:"disabled"}` is removed whenever
- * the history is a tool-call continuation. A continuation with thinking
- * disabled is broken by definition for DeepSeek (0 reasoning deltas, verified
- * live) — the user's own "disabled from the start" choice only applies to
- * non-tool turns. This is evaluated from the history BEFORE any forcing, so
- * placeholder-only histories (replay failed) still get the strip.
+ * Deliberately does NOT touch `thinking`: pi sends thinking:disabled only
+ * when the user chose thinking off — stripping it would override that
+ * choice. (The Open WebUI pipe stripped it because Open WebUI injects the
+ * marker on continuations regardless of user intent; that premise does not
+ * hold in pi.)
  */
 export function fixWirePayloadForDeepSeek(payload: Record<string, any>): Record<string, any> | undefined {
   const messages = payload?.messages;
@@ -191,14 +191,6 @@ export function fixWirePayloadForDeepSeek(payload: Record<string, any>): Record<
   for (const i of toForce) {
     messages[i].reasoning_content = " ";
     changed = true;
-  }
-
-  if (hasAssistantToolCalls) {
-    const thinking = payload.thinking;
-    if (thinking && typeof thinking === "object" && thinking.type === "disabled") {
-      delete payload.thinking;
-      changed = true;
-    }
   }
 
   return changed ? payload : undefined;
