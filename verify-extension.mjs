@@ -4,19 +4,22 @@
  * Loads the BUILT artifact (dist/index.js) the way pi loads a packaged
  * extension, then exercises the exported fix functions against realistic
  * payloads:
+ *    - config-driven scope (model ids, exact/prefix, empty -> inert)
  *    - pi serializer WITH thinkingSignature  -> real text already replayed
  *    - pi serializer WITHOUT signature      -> wire fix injects " "
- *    - LiteLLM gateway (model deepseek/deepseek-v4-flash, no pi deepseek
- *      detection)                           -> scope detection works
- *    - thinking:disabled kill-switch        -> stripped when history reasons
+ *    - thinking:disabled kill-switch        -> stripped on continuations
  */
 
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const mod = await import("/work/dist/index.js");
 
 const {
-  isDeepSeekModel,
+  modelsMatch,
+  loadConfig,
   isToolScope,
   historyHasToolCalls,
   historyHasReasoning,
@@ -27,6 +30,10 @@ const {
 } = mod;
 
 // ---- 1) jiti load: the factory registers the 3 hooks -----------------------
+const tmpCfg = mkdtempSync(join(tmpdir(), "dsrc-"));
+writeFileSync(join(tmpCfg, "config.json"), JSON.stringify({ models: ["deepseek/deepseek-v4-flash"] }));
+process.env.PI_DEEPSEEK_REASONING_CONFIG = join(tmpCfg, "config.json");
+
 let registered = [];
 const stubPi = { on: (name, fn) => registered.push(name) };
 factory(stubPi);
@@ -37,14 +44,24 @@ assert.deepEqual(registered.sort(), [
 ]);
 console.log("ok: extension loads via jiti, registers context + before_provider_request + message_end");
 
-// ---- 2) scope detection -----------------------------------------------------
-assert.equal(isDeepSeekModel("deepseek", "deepseek-v4-flash", undefined), true);
-assert.equal(isDeepSeekModel("litellm", "deepseek/deepseek-v4-flash", "http://litellm.private"), true);
-assert.equal(isDeepSeekModel("openai", "deepseek-v4-pro", "http://litellm.private"), true);
-assert.equal(isDeepSeekModel("openai", "deepseek/deepseek-v4-pro", "https://api.deepseek.com/v1"), true);
-assert.equal(isDeepSeekModel("openai", "gpt-4o", "https://api.openai.com"), false);
-assert.equal(isDeepSeekModel("anthropic", "claude-haiku-4-5", "http://litellm.private"), false);
-console.log("ok: scope detection (direct, LiteLLM prefix, baseUrl; non-deepseek excluded)");
+// ---- 2) config-driven scope -------------------------------------------------
+assert.equal(modelsMatch("deepseek/deepseek-v4-flash", ["deepseek/deepseek-v4-flash"]), true); // exact
+assert.equal(modelsMatch("deepseek/deepseek-v4-pro", ["deepseek/"]), true); // prefix
+assert.equal(modelsMatch("DEEPSEEK/DeepSeek-v4-flash", ["deepseek/deepseek-v4-flash"]), true); // case-insensitive
+assert.equal(modelsMatch("claude-haiku-4-5", ["deepseek/"]), false); // non-deepseek excluded
+assert.equal(modelsMatch("deepseek-v4-flash", ["deepseek/deepseek-v4-flash"]), false); // bare id, not configured
+assert.equal(modelsMatch("gpt-4o", []), false); // empty list -> never matches
+assert.equal(modelsMatch(undefined, ["deepseek/"]), false);
+console.log("ok: config scope (exact, prefix, case-insensitive, empty -> inert, bare id not configured)");
+
+// ---- 2b) loadConfig: file, malformed, missing ------------------------------
+const loaded = loadConfig(join(tmpCfg, "config.json"));
+assert.deepEqual(loaded.models, ["deepseek/deepseek-v4-flash"]);
+const malformed = mkdtempSync(join(tmpdir(), "dsrc-bad-"));
+writeFileSync(join(malformed, "config.json"), "{ not json");
+assert.deepEqual(loadConfig(join(malformed, "config.json")).models, []); // fail-open
+assert.deepEqual(loadConfig("/nonexistent/config.json").models, []); // missing -> inert
+console.log("ok: loadConfig (valid, malformed -> inert, missing -> inert)");
 
 // ---- 3) context fix: stamps signature so the serializer replays REAL text ---
 const nativeMsgs = [

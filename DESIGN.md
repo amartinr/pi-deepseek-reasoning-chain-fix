@@ -170,16 +170,23 @@ crash a turn.
 
 ## 7. Scope detection
 
-`isDeepSeekModel(provider, modelId, baseUrl)` matches:
+The scope is **explicit, not heuristic**: the model ids the fix applies to
+are listed in a config file, avoiding silent misses and false positives by
+construction.
 
-- `provider === "deepseek"`,
-- baseUrl containing `deepseek.com`,
-- model id with the `deepseek/` or `deepseek-` prefix (covers LiteLLM-style
-  gateways that keep the prefix),
-- any extra prefix in `PI_DEEPSEEK_REASONING_EXTRA` (escape hatch).
+- Location: `~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix/config.json`
+  (overridable via `PI_DEEPSEEK_REASONING_CONFIG`).
+- Format: `{ "models": ["deepseek/deepseek-v4-flash", "deepseek/"] }`.
+- Matching: the model id equals a listed id or starts with one
+  (case-insensitive) — `modelsMatch()`.
+- **Empty or missing list → the extension is inert** (safe default; the load
+  log states the active ids or the inert state).
+- Fail-open: a malformed file yields an empty list; the extension never
+  crashes on config errors.
 
-*Known gap:* a gateway that strips the prefix (bare `deepseek-v4-flash`
-under a custom provider) is silently missed — PLAN.md P2.
+Earlier heuristic detection (provider `deepseek`, baseUrl `deepseek.com`,
+id prefixes) was removed in favor of this explicit configuration — see
+PLAN.md P2.
 
 ## 8. Validation evidence
 

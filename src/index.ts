@@ -44,29 +44,67 @@
  *    (ensures `thinkingSignature` survives whatever the session persistence
  *    does with extra block fields).
  *
- * Scope detection covers direct DeepSeek, DeepSeek behind any gateway that
- * keeps the `deepseek/` model prefix (LiteLLM), and any baseUrl containing
- * "deepseek.com". All changes are deterministic and fail open.
+ * Scope is explicit, not heuristic: the model ids the fix applies to are
+ * listed in a config file (see the Configuration section below). All changes
+ * are deterministic and fail open.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import os from "node:os";
 
-/** Extra model ids/prefixes to treat as DeepSeek (comma-separated env override). */
-const EXTRA_PATTERN =
-  process.env.PI_DEEPSEEK_REASONING_EXTRA?.split(",")
-    .map((s) => s.trim())
-    .filter(Boolean) ?? [];
+// ----------------------------------------------------------------------------
+// Configuration (model ids the extension applies to)
+// ----------------------------------------------------------------------------
+// The scope is explicit, not heuristic: the config file lists the model ids
+// for which the DeepSeek contract fix applies. Keeping it in a file (instead
+// of provider/baseUrl sniffing) avoids silent misses and false positives.
+//
+//   ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix/config.json
+//   { "models": ["deepseek/deepseek-v4-flash", "deepseek/"] }
+//
+// An id matches when the model id equals the entry or starts with it (case
+// insensitive), so "deepseek/" covers every deepseek-routed model. An empty
+// or missing list leaves the extension inert — the safe default.
+//
+// Override the path with PI_DEEPSEEK_REASONING_CONFIG (tests, custom setups).
 
-export function isDeepSeekModel(
-  provider: string | undefined,
-  modelId: string | undefined,
-  baseUrl: string | undefined
-): boolean {
-  if (!modelId) return false;
-  if (provider === "deepseek") return true;
-  if ((baseUrl ?? "").toLowerCase().includes("deepseek.com")) return true;
-  if (modelId.startsWith("deepseek/") || modelId.startsWith("deepseek-")) return true;
-  return EXTRA_PATTERN.some((p) => modelId.startsWith(p) || modelId === p);
+export interface ExtensionConfig {
+  models: string[];
+}
+
+const DEFAULT_CONFIG_PATH = join(
+  os.homedir(),
+  ".pi",
+  "agent",
+  "extensions",
+  "pi-deepseek-reasoning-chain-fix",
+  "config.json"
+);
+
+/** Load the extension config. Fail-open: any error yields an empty (inert) list. */
+export function loadConfig(
+  configPath: string = process.env.PI_DEEPSEEK_REASONING_CONFIG ?? DEFAULT_CONFIG_PATH
+): ExtensionConfig {
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const models = Array.isArray(parsed?.models)
+      ? parsed.models
+          .filter((m: unknown): m is string => typeof m === "string" && m.trim().length > 0)
+          .map((m: string) => m.trim().toLowerCase())
+      : [];
+    return { models };
+  } catch {
+    return { models: [] }; // missing/malformed file -> inert
+  }
+}
+
+/** True when the model id equals a configured id or starts with one. */
+export function modelsMatch(modelId: string | undefined, models: string[]): boolean {
+  if (!modelId || models.length === 0) return false;
+  const id = modelId.toLowerCase();
+  return models.some((m) => id === m || id.startsWith(m));
 }
 
 export function isToolScope(payload: Record<string, any>): boolean {
@@ -179,25 +217,32 @@ export function fixFinalizedMessageForDeepSeek(message: any): { message: any } |
 }
 
 export default function (pi: ExtensionAPI) {
-  console.log(
-    "[deepseek-reasoning-chain] active: reasoning chaining fix for deepseek models"
-  );
+  const config = loadConfig();
+  const applies = (model: any): boolean => modelsMatch(model?.id, config.models);
+  if (config.models.length === 0) {
+    console.log(
+      "[deepseek-reasoning-chain] loaded but INERT: no model ids configured " +
+        "(set ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix/config.json)"
+    );
+  } else {
+    console.log(
+      `[deepseek-reasoning-chain] active for ${config.models.length} model id(s): ${config.models.join(", ")}`
+    );
+  }
+
   pi.on("context", async (event, ctx) => {
-    const model = ctx.model as any;
-    if (!model || !isDeepSeekModel(model.provider, model.id, model.baseUrl)) return;
+    if (!applies(ctx.model)) return;
     const { messages, changed } = fixNativeMessagesForDeepSeek(event.messages);
     return changed ? { messages } : undefined;
   });
 
   pi.on("before_provider_request", (event, ctx) => {
-    const model = ctx.model as any;
-    if (!model || !isDeepSeekModel(model.provider, model.id, model.baseUrl)) return;
+    if (!applies(ctx.model)) return;
     return fixWirePayloadForDeepSeek(event.payload as Record<string, any>);
   });
 
   pi.on("message_end", async (event, ctx) => {
-    const model = ctx.model as any;
-    if (!model || !isDeepSeekModel(model.provider, model.id, model.baseUrl)) return;
+    if (!applies(ctx.model)) return;
     return fixFinalizedMessageForDeepSeek(event.message);
   });
 }

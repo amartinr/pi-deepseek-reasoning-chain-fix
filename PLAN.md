@@ -63,22 +63,24 @@ string (provider/format edge), the loop iterates characters silently.
 - [x] Same guard in the new single-pass wire loop for `tool_calls`.
       Regression-tested: string content never crashes nor mutates.
 
-## P2 — scope detection for prefix-stripped gateways
+## P2 — config-driven scope (replaces heuristic detection)
 
-`isDeepSeekModel` matches `provider === "deepseek"`, baseUrl containing
-`deepseek.com`, or model id with the `deepseek/`/`deepseek-` prefix. A
-gateway that strips the prefix (model id `deepseek-v4-flash`, provider
-`litellm`, baseUrl `http://litellm.private`) is **silently missed**.
+**Resolution:** the heuristics (provider/baseUrl/id-prefix sniffing) were
+removed entirely. The scope is now explicit configuration:
 
-**Proposal:** add a documented fail-safe matcher:
-- model id starting with `deepseek` (covers `deepseek-v4-flash` without the
-  slash) **only when the provider is a known gateway** (`litellm`,
-  `openrouter`, or any custom `openai-completions` provider), or
-- `PI_DEEPSEEK_REASONING_EXTRA` (already supported) as the explicit escape
-  hatch; document the silent-miss risk in the README.
+- `~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix/config.json` with
+  `{ "models": [...] }` — the model ids (exact or prefix match,
+  case-insensitive).
+- **Empty/missing list → extension inert** (safe default: forcing
+  DeepSeek-specific fields on arbitrary models is dangerous).
+- `PI_DEEPSEEK_REASONING_CONFIG` overrides the path (tests, custom setups).
+- Fail-open on malformed files; the load log reports the active ids or the
+  inert state (no more silent misses).
+- `isDeepSeekModel`/`PI_DEEPSEEK_REASONING_EXTRA` removed; the matcher is
+  `modelsMatch()` and the loader `loadConfig()` (both exported and tested).
 
-- [ ] Widen the matcher without false positives on non-DeepSeek models.
-- [ ] Unit tests for: bare `deepseek-v4-flash` id, custom provider,
+- [x] Widen the matcher without false positives on non-DeepSeek models.
+- [x] Unit tests for: bare `deepseek-v4-flash` id, custom provider,
       false-positive guard (e.g. `deepseek-models-test` on a random provider
       stays excluded unless matched by the extra env list).
 
