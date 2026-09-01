@@ -10,9 +10,21 @@ tool call.
 
 ## Install
 
+From npm:
+
 ```bash
-pi install @amartinr/pi-deepseek-reasoning-chain-fix
-# or manual copy (single-file source):
+pi install npm:@amartinr/pi-deepseek-reasoning-chain-fix@0.2.1
+```
+
+From GitHub:
+
+```bash
+pi install git:github.com/amartinr/pi-deepseek-reasoning-chain-fix@v0.2.1
+```
+
+Manual copy (single-file source, for development):
+
+```bash
 cp src/index.ts ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix.ts
 ```
 
