@@ -4,20 +4,24 @@
  * Loads the BUILT artifact (dist/index.js) the way pi loads a packaged
  * extension, then exercises the exported fix functions against realistic
  * payloads:
+ *    - config-driven scope (model ids, exact/prefix, empty -> inert)
  *    - pi serializer WITH thinkingSignature  -> real text already replayed
  *    - pi serializer WITHOUT signature      -> wire fix injects " "
- *    - LiteLLM gateway (model deepseek/deepseek-v4-flash, no pi deepseek
- *      detection)                           -> scope detection works
- *    - thinking:disabled kill-switch        -> stripped when history reasons
+ *    - thinking:disabled kill-switch        -> stripped on continuations
  */
 
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const mod = await import("/work/dist/index.js");
 
 const {
-  isDeepSeekModel,
+  modelsMatch,
+  loadConfig,
   isToolScope,
+  historyHasToolCalls,
   historyHasReasoning,
   fixNativeMessagesForDeepSeek,
   fixWirePayloadForDeepSeek,
@@ -26,6 +30,10 @@ const {
 } = mod;
 
 // ---- 1) jiti load: the factory registers the 3 hooks -----------------------
+const tmpCfg = mkdtempSync(join(tmpdir(), "dsrc-"));
+writeFileSync(join(tmpCfg, "config.json"), JSON.stringify({ models: ["deepseek/deepseek-v4-flash"] }));
+process.env.PI_DEEPSEEK_REASONING_CONFIG = join(tmpCfg, "config.json");
+
 let registered = [];
 const stubPi = { on: (name, fn) => registered.push(name) };
 factory(stubPi);
@@ -36,14 +44,24 @@ assert.deepEqual(registered.sort(), [
 ]);
 console.log("ok: extension loads via jiti, registers context + before_provider_request + message_end");
 
-// ---- 2) scope detection -----------------------------------------------------
-assert.equal(isDeepSeekModel("deepseek", "deepseek-v4-flash", undefined), true);
-assert.equal(isDeepSeekModel("litellm", "deepseek/deepseek-v4-flash", "http://litellm.private"), true);
-assert.equal(isDeepSeekModel("openai", "deepseek-v4-pro", "http://litellm.private"), true);
-assert.equal(isDeepSeekModel("openai", "deepseek/deepseek-v4-pro", "https://api.deepseek.com/v1"), true);
-assert.equal(isDeepSeekModel("openai", "gpt-4o", "https://api.openai.com"), false);
-assert.equal(isDeepSeekModel("anthropic", "claude-haiku-4-5", "http://litellm.private"), false);
-console.log("ok: scope detection (direct, LiteLLM prefix, baseUrl; non-deepseek excluded)");
+// ---- 2) config-driven scope -------------------------------------------------
+assert.equal(modelsMatch("deepseek/deepseek-v4-flash", ["deepseek/deepseek-v4-flash"]), true); // exact
+assert.equal(modelsMatch("deepseek/deepseek-v4-pro", ["deepseek/"]), true); // prefix
+assert.equal(modelsMatch("DEEPSEEK/DeepSeek-v4-flash", ["deepseek/deepseek-v4-flash"]), true); // case-insensitive
+assert.equal(modelsMatch("claude-haiku-4-5", ["deepseek/"]), false); // non-deepseek excluded
+assert.equal(modelsMatch("deepseek-v4-flash", ["deepseek/deepseek-v4-flash"]), false); // bare id, not configured
+assert.equal(modelsMatch("gpt-4o", []), false); // empty list -> never matches
+assert.equal(modelsMatch(undefined, ["deepseek/"]), false);
+console.log("ok: config scope (exact, prefix, case-insensitive, empty -> inert, bare id not configured)");
+
+// ---- 2b) loadConfig: file, malformed, missing ------------------------------
+const loaded = loadConfig(join(tmpCfg, "config.json"));
+assert.deepEqual(loaded.models, ["deepseek/deepseek-v4-flash"]);
+const malformed = mkdtempSync(join(tmpdir(), "dsrc-bad-"));
+writeFileSync(join(malformed, "config.json"), "{ not json");
+assert.deepEqual(loadConfig(join(malformed, "config.json")).models, []); // fail-open
+assert.deepEqual(loadConfig("/nonexistent/config.json").models, []); // missing -> inert
+console.log("ok: loadConfig (valid, malformed -> inert, missing -> inert)");
 
 // ---- 3) context fix: stamps signature so the serializer replays REAL text ---
 const nativeMsgs = [
@@ -87,15 +105,29 @@ assert.equal(fixed.messages[1].reasoning_content, "I need today's date first.");
 assert.equal(fixed.messages[3].reasoning_content, " "); // missing -> " "
 console.log("ok: wire fix keeps real text, upgrades missing/empty to non-empty");
 
-// ---- 5) wire fix: out of tool scope -> untouched ---------------------------
+// ---- 5) wire fix: out of tool scope -> untouched AND unmutated -------------
 const plain = {
   model: "deepseek/deepseek-v4-flash",
   messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }],
 };
+const plainCopy = structuredClone(plain);
 assert.equal(fixWirePayloadForDeepSeek(plain), undefined);
-console.log("ok: no tool scope -> payload untouched");
+assert.deepEqual(plain, plainCopy); // no in-place mutation outside scope
+console.log("ok: no tool scope -> payload untouched and unmutated");
 
-// ---- 6) thinking:disabled stripped only when history reasons ---------------
+// ---- 5b) tools=[] with no tool history still counts as scope (contract) ---
+const emptyTools = {
+  model: "deepseek/deepseek-v4-flash",
+  tools: [],
+  messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }],
+};
+const fixedEmptyTools = fixWirePayloadForDeepSeek(emptyTools);
+assert.ok(fixedEmptyTools);
+assert.equal(fixedEmptyTools.messages[1].reasoning_content, " ");
+console.log("ok: tools=[] still triggers the contract forcing");
+
+// ---- 6) thinking:disabled stripped on continuations (P0 semantics) --------
+// 6a) continuation WITH real reasoning in history
 const disabledWithReasoning = {
   model: "deepseek/deepseek-v4-flash",
   thinking: { type: "disabled" },
@@ -109,7 +141,59 @@ const disabledWithReasoning = {
 const stripped = fixWirePayloadForDeepSeek(disabledWithReasoning);
 assert.ok(stripped);
 assert.equal("thinking" in stripped, false);
-console.log("ok: thinking:disabled stripped when history has reasoning");
+console.log("ok: thinking:disabled stripped on continuation with real reasoning");
+
+// 6b) continuation WITHOUT any real reasoning (replay failed, placeholder
+//     history) — the P0 fix: the strip must still fire.
+const disabledNoReasoning = {
+  model: "deepseek/deepseek-v4-flash",
+  thinking: { type: "disabled" },
+  messages: [
+    { role: "user", content: "weather?" },
+    { role: "assistant", content: "Checking.", tool_calls: [{ id: "c1", type: "function", function: { name: "get_date", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "c1", content: "ok" },
+  ],
+  tools: [],
+};
+const strippedNoReasoning = fixWirePayloadForDeepSeek(disabledNoReasoning);
+assert.ok(strippedNoReasoning);
+assert.equal("thinking" in strippedNoReasoning, false);
+assert.equal(strippedNoReasoning.messages[1].reasoning_content, " ");
+console.log("ok: thinking:disabled stripped on continuation even without real reasoning (P0)");
+
+// 6c) thinking:disabled NOT stripped on a non-tool chat
+const disabledPlainChat = {
+  model: "deepseek/deepseek-v4-flash",
+  thinking: { type: "disabled" },
+  messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }],
+};
+assert.equal(fixWirePayloadForDeepSeek(disabledPlainChat), undefined);
+assert.equal(disabledPlainChat.thinking.type, "disabled"); // untouched
+console.log("ok: thinking:disabled kept on non-tool chat (user choice)");
+
+// ---- 6d) determinism: running the fix twice yields a byte-identical payload
+const det = {
+  model: "deepseek/deepseek-v4-flash",
+  thinking: { type: "disabled" },
+  messages: [
+    { role: "user", content: "weather?" },
+    { role: "assistant", content: "Checking.", tool_calls: [{ id: "c1", type: "function", function: { name: "get_date", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "c1", content: "ok" },
+    { role: "assistant", content: "Answering." },
+  ],
+  tools: [],
+};
+const first = structuredClone(det);
+fixWirePayloadForDeepSeek(first);
+const second = structuredClone(first);
+fixWirePayloadForDeepSeek(second);
+assert.deepEqual(first, second); // idempotent serialization -> stable prefix cache
+console.log("ok: wire fix deterministic and idempotent (prefix cache stable)");
+
+// ---- 6e) historyHasToolCalls helper ----------------------------------------
+assert.equal(historyHasToolCalls(disabledNoReasoning.messages), true);
+assert.equal(historyHasToolCalls([{ role: "user", content: "hi" }]), false);
+console.log("ok: historyHasToolCalls detects continuation flag");
 
 // ---- 7) return path: finalized message gets replayable signature -----------
 const finalMsg = {
@@ -121,5 +205,17 @@ assert.ok(res);
 assert.equal(res.message.content[0].thinkingSignature, "reasoning_content");
 assert.equal(fixFinalizedMessageForDeepSeek({ role: "user", content: "x" }), undefined);
 console.log("ok: message_end fix stamps stored message, non-assistant untouched");
+
+// ---- 8) P1 robustness: string content never crashes ------------------------
+const stringContentMsgs = [
+  { role: "user", content: "hi" },
+  { role: "assistant", content: "hello" }, // string content (edge)
+  { role: "assistant", content: [{ type: "thinking", thinking: "real" }] },
+];
+const strRes = fixNativeMessagesForDeepSeek(stringContentMsgs);
+assert.equal(strRes.changed, true); // only the array-content block gets stamped
+assert.equal(stringContentMsgs[1].content, "hello"); // string untouched, no char iteration
+assert.equal(fixFinalizedMessageForDeepSeek({ role: "assistant", content: "plain string" }), undefined);
+console.log("ok: string content handled defensively (no crash, no mutation)");
 
 console.log("\nALL CHECKS PASSED");

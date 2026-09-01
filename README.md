@@ -11,7 +11,7 @@ tool call.
 ## Install
 
 ```bash
-pi install @amartinr/pi-deepseek-reasoning-chain-fix@0.1.0
+pi install @amartinr/pi-deepseek-reasoning-chain-fix
 # or manual copy (single-file source):
 cp src/index.ts ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix.ts
 ```
@@ -23,8 +23,22 @@ Compatible with any DeepSeek model, direct or behind a gateway that keeps the
 
 ## Configuration
 
-Optional: `PI_DEEPSEEK_REASONING_EXTRA` — comma-separated model prefixes to
-treat as DeepSeek.
+The extension applies only to the model ids listed in
+`~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix/config.json`:
+
+```json
+{
+  "models": [
+    "deepseek/deepseek-v4-flash",
+    "deepseek/deepseek-v4-pro"
+  ]
+}
+```
+
+An id matches exactly or as a prefix (case-insensitive), so `"deepseek/"`
+covers every deepseek-routed model. An empty or missing list leaves the
+extension **inert** — the safe default; the load log reports the active ids.
+Override the config path with `PI_DEEPSEEK_REASONING_CONFIG`.
 
 ## Development
 

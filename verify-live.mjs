@@ -186,3 +186,43 @@ for (const [name, samples] of Object.entries(results)) {
   const median = (arr) => arr[Math.floor(arr.length / 2)];
   console.log(`${name}: reasoning median=${median(chars)} chars / ${median(deltas)} deltas | finishes=${samples.map((s) => s.finish).join(",")}`);
 }
+
+// ---------------------------------------------------------------------------
+// Strip semantics (P0): continuation with thinking:disabled and a history
+// WITHOUT real reasoning (replay failed -> placeholder). WITHOUT the fix the
+// kill-switch stays on; WITH the fix (config + wire) it is stripped and the
+// model reasons again.
+// ---------------------------------------------------------------------------
+console.log("\n=== thinking:disabled on continuation (P0 strip semantics) ===");
+const stripBase = {
+  model: MODEL,
+  thinking: { type: "disabled" },
+  messages: [
+    { role: "user", content: "What's the weather like in London today?" },
+    ...toolMsgs.map((m, i) => ({
+      role: "assistant",
+      content: `Checking ${i}.`,
+      tool_calls: [{ id: m.tool_call_id, type: "function", function: { name: "get_date", arguments: "{}" } }],
+      // no reasoning_content at all: replay failed -> placeholder history
+    })),
+    ...toolMsgs,
+    { role: "assistant", content: "Let me answer." },
+  ],
+  tools: TOOLS,
+};
+for (const [label, apply] of [
+  ["without fix (disabled kept)", false],
+  ["with fix (disabled stripped)", true],
+]) {
+  const samples = [];
+  for (let i = 0; i < 2; i++) {
+    const payload = JSON.parse(JSON.stringify(stripBase));
+    if (apply) {
+      const fixed = fixWirePayloadForDeepSeek(payload);
+      if (!fixed) throw new Error("expected strip fix to touch payload");
+    }
+    const res = await completeStream(payload.messages, payload.tools);
+    samples.push(res.error ? `ERROR ${res.error}: ${res.body}` : `${res.reasoning_deltas} deltas / ${res.reasoning.length} chars`);
+  }
+  console.log(`${label}: ${samples.join(" | ")}`);
+}
