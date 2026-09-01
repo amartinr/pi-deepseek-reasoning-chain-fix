@@ -112,8 +112,10 @@ removed entirely. The scope is now explicit configuration:
 
 ## Definition of done
 
-- All P0/P1 items implemented with unit tests in `verify-extension.mjs`.
-- `npm run build` + `npm run verify` pass; live A/B (`verify-live.mjs`)
-  re-run against the gateway for the strip semantics.
-- `npm version patch` → v0.1.2, published, changelog via commit history.
-- Branch merged to `master` only after the live check passes.
+- [x] All P0/P1 items implemented with unit tests in `verify-extension.mjs`.
+- [x] `npm run build` + `npm run verify` pass; live A/B (`verify-live.mjs`)
+      re-run against the gateway for the strip semantics — the P0 strip
+      turns a hard HTTP 400 (`reasoning_content must be passed back`) into
+      working reasoning (32/36 deltas).
+- [x] `npm version patch` → v0.1.2, published, changelog via commit history.
+- [x] Branch merged to `master` only after the live check passes.

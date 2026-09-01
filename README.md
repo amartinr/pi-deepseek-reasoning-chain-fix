@@ -11,7 +11,7 @@ tool call.
 ## Install
 
 ```bash
-pi install @amartinr/pi-deepseek-reasoning-chain-fix@0.1.0
+pi install @amartinr/pi-deepseek-reasoning-chain-fix
 # or manual copy (single-file source):
 cp src/index.ts ~/.pi/agent/extensions/pi-deepseek-reasoning-chain-fix.ts
 ```
