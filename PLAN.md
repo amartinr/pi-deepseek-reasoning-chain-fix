@@ -99,10 +99,10 @@ removed entirely. The scope is now explicit configuration:
 
 ## P3 — observability
 
-- [ ] Gate the startup `console.log` behind
-      `PI_DEEPSEEK_REASONING_LOG=1` (quiet by default); keep a one-time
-      log on the first request where scope detection matches, so a silent
-      miss (P2) is visible in the logs.
+- [x] Resolved with the config-driven scope: the load log always reports the
+      active model ids or the inert state, so a silent miss is impossible
+      (the original proposal — an env-gated startup log — was superseded;
+      gating would hide the activation signal).
 
 ## Out of scope (deliberate)
 
