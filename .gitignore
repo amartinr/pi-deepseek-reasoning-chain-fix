@@ -1,0 +1,8 @@
+# Sensitive / ephemeral — never commit
+.env
+*.key
+*.pem
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
