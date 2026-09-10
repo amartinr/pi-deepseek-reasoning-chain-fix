@@ -13,13 +13,13 @@ tool call.
 From npm:
 
 ```bash
-pi install npm:@amartinr/pi-deepseek-reasoning-chain-fix@0.2.1
+pi install npm:@amartinr/pi-deepseek-reasoning-chain-fix@0.2.2
 ```
 
 From GitHub:
 
 ```bash
-pi install git:github.com/amartinr/pi-deepseek-reasoning-chain-fix@v0.2.1
+pi install git:github.com/amartinr/pi-deepseek-reasoning-chain-fix@v0.2.2
 ```
 
 Manual copy (single-file source, for development):
