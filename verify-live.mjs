@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 
 const { fixNativeMessagesForDeepSeek, fixWirePayloadForDeepSeek } = await import(
-  "/work/dist/index.js"
+  "./dist/index.js"
 );
 
 const KEY = readFileSync("/tmp/.litellm_key", "utf8").trim();

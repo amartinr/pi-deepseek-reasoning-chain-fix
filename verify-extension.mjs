@@ -7,7 +7,7 @@
  *    - config-driven scope (model ids, exact/prefix, empty -> inert)
  *    - pi serializer WITH thinkingSignature  -> real text already replayed
  *    - pi serializer WITHOUT signature      -> wire fix injects " "
- *    - thinking:disabled kill-switch        -> stripped on continuations
+ *    - thinking:disabled kill-switch        -> preserved (user intent)
  */
 
 import assert from "node:assert/strict";
@@ -15,7 +15,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const mod = await import("/work/dist/index.js");
+const mod = await import("./dist/index.js");
 
 const {
   modelsMatch,
